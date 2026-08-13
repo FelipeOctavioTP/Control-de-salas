@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Control de Entrega y Recepción de Salas — DCSM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg:#0B1220;
+    --panel:#121B29;
+    --panel-2:#0F1826;
+    --border:#223148;
+    --accent:#37B5FF;
+    --accent-dim:#1C4A66;
+    --amber:#F2B705;
+    --green:#4ADE80;
+    --gray:#8FA3BF;
+    --text:#E7EDF5;
+    --muted:#8FA3BF;
+    --bad:#F87171;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:"IBM Plex Mono", monospace;
+    padding:24px 16px 60px;
+  }
+  h1,h2,h3,.disp{font-family:"Chakra Petch", sans-serif;}
+  .wrap{max-width:1100px;margin:0 auto;}
+  header{
+    display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;justify-content:space-between;
+    border-bottom:1px solid var(--border);padding-bottom:18px;margin-bottom:22px;
+  }
+  header h1{font-size:22px;font-weight:700;margin:0 0 6px;letter-spacing:.3px;}
+  header .sub{font-size:12.5px;color:var(--muted);line-height:1.6;}
+  .escal{font-size:11.5px;color:var(--gray);}
+  .escal b{color:var(--text);}
+  .badge-conn{
+    font-size:11px;padding:4px 10px;border-radius:3px;border:1px solid var(--border);
+    color:var(--muted);white-space:nowrap;
+  }
+  .badge-conn.ok{color:var(--green);border-color:#1f5c3c;background:#0f2318;}
+  .badge-conn.err{color:var(--bad);border-color:#5c2323;background:#231010;}
+
+  .steps{display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;}
+  .step{
+    flex:1;min-width:150px;padding:10px 12px;border:1px solid var(--border);border-radius:4px;
+    background:var(--panel);cursor:pointer;position:relative;
+  }
+  .step .n{font-size:10px;color:var(--muted);letter-spacing:1px;}
+  .step .t{font-family:"Chakra Petch",sans-serif;font-size:13px;font-weight:600;margin-top:2px;}
+  .step.active{border-color:var(--accent);background:linear-gradient(180deg,#12233a,#121B29);}
+  .step.active .t{color:var(--accent);}
+
+  .panel{
+    background:var(--panel);border:1px solid var(--border);border-radius:6px;
+    padding:18px 20px;margin-bottom:18px;
+  }
+  .panel h2{font-size:14px;margin:0 0 14px;color:var(--accent);letter-spacing:.4px;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;}
+  .field{display:flex;flex-direction:column;gap:6px;}
+  .field.full{grid-column:1/-1;}
+  label{font-size:11px;color:var(--muted);letter-spacing:.4px;text-transform:uppercase;}
+  input[type=text],input[type=date],select,textarea{
+    background:var(--panel-2);border:1px solid var(--border);border-radius:4px;
+    color:var(--text);padding:9px 10px;font-family:"IBM Plex Mono",monospace;font-size:13px;
+    width:100%;
+  }
+  textarea{resize:vertical;min-height:56px;}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);}
+  .hint{font-size:10.5px;color:#607089;margin-top:2px;}
+
+  .sig-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-top:6px;}
+  .sig-box{border:1px solid var(--border);border-radius:4px;background:var(--panel-2);padding:10px;}
+  .sig-box .lbl{font-size:11px;color:var(--muted);letter-spacing:.4px;text-transform:uppercase;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;}
+  canvas.pad{width:100%;height:120px;background:#0A1119;border:1px dashed #2C3E58;border-radius:3px;touch-action:none;}
+  .mini-btn{background:none;border:1px solid var(--border);color:var(--muted);font-size:10px;padding:3px 8px;border-radius:3px;cursor:pointer;font-family:"IBM Plex Mono",monospace;}
+  .mini-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+  .actions{display:flex;gap:10px;align-items:center;margin-top:16px;flex-wrap:wrap;}
+  button.primary{
+    background:var(--accent);color:#04202E;border:none;font-weight:600;
+    padding:11px 22px;border-radius:4px;cursor:pointer;font-family:"Chakra Petch",sans-serif;font-size:13.5px;
+    letter-spacing:.3px;
+  }
+  button.primary:disabled{background:#2A3B4C;color:#5F7185;cursor:not-allowed;}
+  button.primary:hover:not(:disabled){background:#57C4FF;}
+  .status-msg{font-size:12px;}
+  .status-msg.ok{color:var(--green);}
+  .status-msg.err{color:var(--bad);}
+
+  .filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;}
+  .filters select,.filters input{max-width:200px;}
+  table{width:100%;border-collapse:collapse;font-size:12px;}
+  th{
+    text-align:left;font-family:"Chakra Petch",sans-serif;font-size:10.5px;letter-spacing:.5px;
+    text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);padding:8px 8px;
+    white-space:nowrap;
+  }
+  td{padding:8px;border-bottom:1px solid #182234;vertical-align:top;}
+  tr:hover td{background:#0F1B2C;}
+  .pill{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;white-space:nowrap;}
+  .pill.Entrega{background:#12314A;color:var(--accent);}
+  .pill.Diario{background:#123A22;color:var(--green);}
+  .pill.Semanal{background:#3A2E08;color:var(--amber);}
+  .pill.Cierre{background:#242C38;color:var(--gray);}
+  .sig-thumb{width:70px;height:32px;object-fit:contain;background:#fff;border-radius:2px;cursor:pointer;}
+  .empty{color:var(--muted);font-size:12px;padding:18px 4px;}
+  .loading{color:var(--muted);font-size:12px;padding:18px 4px;}
+
+  .modal-bg{position:fixed;inset:0;background:rgba(4,8,14,.75);display:none;align-items:center;justify-content:center;z-index:50;}
+  .modal-bg.show{display:flex;}
+  .modal{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:16px;max-width:420px;}
+  .modal img{width:100%;background:#fff;border-radius:4px;}
+  .modal button{margin-top:10px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <h1>Control de Entrega y Recepción de Salas — DCSM</h1>
+      <div class="sub">ICETEL / Teknica &middot; inicio del control: lunes 10-08-2026</div>
+      <div class="escal" style="margin-top:6px;">Escalamiento ICETEL: <b>1. María Catalina Godoy</b> · <b>2. Felipe Torres</b> · <b>3. Anthonny Tamburini</b></div>
+    </div>
+    <div id="connBadge" class="badge-conn">Verificando conexión…</div>
+  </header>
+
+  <div class="steps" id="steps"></div>
+
+  <form id="regForm">
+    <div class="panel">
+      <h2 id="panelTitle">Registro</h2>
+      <div class="grid" id="commonFields"></div>
+      <div class="grid" id="stageFields" style="margin-top:14px;"></div>
+
+      <div class="sig-row" id="sigRow" style="margin-top:16px;"></div>
+
+      <div class="actions">
+        <button type="submit" class="primary" id="submitBtn">Guardar registro</button>
+        <span class="status-msg" id="statusMsg"></span>
+      </div>
+    </div>
+  </form>
+
+  <div class="panel">
+    <h2>Registros</h2>
+    <div class="filters">
+      <select id="filterEtapa">
+        <option value="">Todas las etapas</option>
+        <option value="Entrega">Entrega Sala</option>
+        <option value="Diario">Control Diario</option>
+        <option value="Semanal">Recepción Semanal</option>
+        <option value="Cierre">Cierre</option>
+      </select>
+      <input type="text" id="filterSala" placeholder="Filtrar por sala">
+      <button type="button" class="mini-btn" id="refreshBtn">Actualizar</button>
+    </div>
+    <div style="overflow-x:auto;">
+      <table id="recTable">
+        <thead>
+          <tr>
+            <th>Etapa</th><th>Fecha</th><th>Sala</th><th>Resp. ICETEL</th><th>Resp. Teknica</th>
+            <th>Detalle</th><th>Avance</th><th>Confirmación</th><th>Firma entrega</th><th>Firma recibe</th>
+          </tr>
+        </thead>
+        <tbody id="recBody"></tbody>
+      </table>
+    </div>
+    <div id="emptyMsg" class="empty" style="display:none;">Aún no hay registros. El primero que guardes aparecerá aquí.</div>
+    <div id="loadingMsg" class="loading">Cargando registros…</div>
+  </div>
+
+</div>
+
+<div class="modal-bg" id="sigModalBg">
+  <div class="modal">
+    <img id="sigModalImg" src="" alt="Firma">
+    <button type="button" class="mini-btn" id="sigModalClose">Cerrar</button>
+  </div>
+</div>
+
+<script>
+/* ============ CONFIGURACIÓN SUPABASE ============
+   Reemplaza estos dos valores por los de tu proyecto Supabase
+   (Project Settings → API). El anon key es público, seguro de
+   dejar en el HTML siempre que uses Row Level Security. */
+const SUPABASE_URL = "https://xnlqyxxyryqyziksmajn.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhubHF5eHh5cnlxeXppa3NtYWpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4NzQxODEsImV4cCI6MjA5NzQ1MDE4MX0.uKhq16RBJSoEKLdjD04DTrHnBOg9IxU2cpREQfSf8S4";
+const TABLE_NAME = "control_salas_dcsm";
+/* ================================================= */
+
+let supabase = null;
+let configured = SUPABASE_ANON_KEY && SUPABASE_ANON_KEY.indexOf("PEGA_AQUI") === -1;
+if (configured) {
+  supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+}
+
+const STAGES = [
+  { key:"Entrega", label:"Entrega de sala", n:"01", panel:"Entrega de sala (lunes)" },
+  { key:"Diario",  label:"Control diario",  n:"02", panel:"Control diario" },
+  { key:"Semanal", label:"Recepción semanal", n:"03", panel:"Recepción semanal" },
+  { key:"Cierre",  label:"Cierre",          n:"04", panel:"Cierre de actividades" },
+];
+
+let currentStage = "Entrega";
+
+const stepsEl = document.getElementById("steps");
+STAGES.forEach(s=>{
+  const d = document.createElement("div");
+  d.className = "step" + (s.key===currentStage ? " active" : "");
+  d.dataset.stage = s.key;
+  d.innerHTML = `<div class="n">${s.n}</div><div class="t">${s.label}</div>`;
+  d.addEventListener("click", ()=>setStage(s.key));
+  stepsEl.appendChild(d);
+});
+
+function setStage(stage){
+  currentStage = stage;
+  document.querySelectorAll(".step").forEach(el=>{
+    el.classList.toggle("active", el.dataset.stage === stage);
+  });
+  const meta = STAGES.find(s=>s.key===stage);
+  document.getElementById("panelTitle").textContent = meta.panel;
+  renderStageFields();
+  clearSignatures();
+}
+
+function fieldHTML(id, label, type, hint, full){
+  if(type==="textarea"){
+    return `<div class="field${full?' full':''}"><label for="${id}">${label}</label><textarea id="${id}"></textarea>${hint?`<div class="hint">${hint}</div>`:""}</div>`;
+  }
+  return `<div class="field${full?' full':''}"><label for="${id}">${label}</label><input type="${type||'text'}" id="${id}">${hint?`<div class="hint">${hint}</div>`:""}</div>`;
+}
+
+const commonFields = document.getElementById("commonFields");
+commonFields.innerHTML = `
+  ${fieldHTML("fecha","Fecha","date")}
+  ${fieldHTML("sala","Sala","text","Ej: UPS 1, TGA-03, TCU 2")}
+  ${fieldHTML("respIcetel","Responsable ICETEL","text")}
+  ${fieldHTML("respTeknica","Responsable Teknica","text")}
+`;
+
+function renderStageFields(){
+  const c = document.getElementById("stageFields");
+  if(currentStage==="Entrega"){
+    c.innerHTML = `
+      ${fieldHTML("ordenLimpieza","Orden y limpieza del área","text")}
+      ${fieldHTML("infra","Estado de infraestructura existente","text")}
+      ${fieldHTML("condOperacionales","Condiciones operacionales","text")}
+      ${fieldHTML("restricciones","Restricciones / consideraciones particulares","textarea","",true)}
+    `;
+  } else if(currentStage==="Diario"){
+    c.innerHTML = `
+      ${fieldHTML("actividades","Actividades ejecutadas durante el día","textarea","",true)}
+      ${fieldHTML("estadoAvance","Estado de avance de los trabajos","text")}
+      ${fieldHTML("ordenLimpieza","Condición de orden y limpieza","text")}
+      ${fieldHTML("riesgos","Riesgos, hallazgos o desviaciones detectadas","textarea","",true)}
+      ${fieldHTML("salaSegura","¿Sala queda en condiciones seguras?","text","Sí / No — detalle si corresponde")}
+    `;
+  } else if(currentStage==="Semanal"){
+    c.innerHTML = `
+      ${fieldHTML("semana","Semana (del - al)","text","Ej: 10-08 al 14-08-2026")}
+      ${fieldHTML("avance","% Avance","text","Ej: 45")}
+      ${fieldHTML("actividades","Actividades ejecutadas","textarea","",true)}
+      ${fieldHTML("pendientes","Trabajos pendientes","textarea","",true)}
+      ${fieldHTML("compromisos","Observaciones y compromisos","textarea","",true)}
+      ${fieldHTML("confirmacion","Confirmación de término / continuidad","text")}
+    `;
+  } else if(currentStage==="Cierre"){
+    c.innerHTML = `
+      ${fieldHTML("restitucion","Restitución a condiciones originales / alcance","textarea","",true)}
+      ${fieldHTML("observFinales","Observaciones finales","textarea","",true)}
+    `;
+  }
+  renderSignatures();
+}
+
+function renderSignatures(){
+  const r = document.getElementById("sigRow");
+  const labelA = currentStage==="Diario" ? "Firma quien reporta (Teknica)" :
+                 currentStage==="Semanal" ? "Firma Teknica" :
+                 "Firma quien entrega (ICETEL)";
+  const labelB = currentStage==="Diario" ? "Firma quien recibe (ICETEL)" :
+                 currentStage==="Semanal" ? "Firma ICETEL" :
+                 currentStage==="Cierre" ? "Firma Teknica" :
+                 "Firma quien recibe (Teknica)";
+  r.innerHTML = `
+    <div class="sig-box">
+      <div class="lbl"><span>${labelA}</span><button type="button" class="mini-btn" data-clear="A">Limpiar</button></div>
+      <canvas class="pad" id="padA"></canvas>
+    </div>
+    <div class="sig-box">
+      <div class="lbl"><span>${labelB}</span><button type="button" class="mini-btn" data-clear="B">Limpiar</button></div>
+      <canvas class="pad" id="padB"></canvas>
+    </div>
+  `;
+  setupPad("padA");
+  setupPad("padB");
+  r.querySelectorAll("[data-clear]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const id = btn.dataset.clear==="A" ? "padA" : "padB";
+      const ctx = document.getElementById(id).getContext("2d");
+      ctx.clearRect(0,0,9999,9999);
+    });
+  });
+}
+
+function clearSignatures(){
+  ["padA","padB"].forEach(id=>{
+    const cv = document.getElementById(id);
+    if(cv){ cv.getContext("2d").clearRect(0,0,cv.width,cv.height); }
+  });
+}
+
+function setupPad(id){
+  const canvas = document.getElementById(id);
+  const ratio = window.devicePixelRatio || 1;
+  const resize = ()=>{
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * ratio;
+    canvas.height = rect.height * ratio;
+    const ctx = canvas.getContext("2d");
+    ctx.scale(ratio, ratio);
+    ctx.strokeStyle = "#0B1220";
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+  };
+  resize();
+  let drawing = false;
+  const ctx = canvas.getContext("2d");
+  const pos = (e)=>{
+    const rect = canvas.getBoundingClientRect();
+    const t = e.touches ? e.touches[0] : e;
+    return { x: t.clientX - rect.left, y: t.clientY - rect.top };
+  };
+  const start = (e)=>{ drawing = true; const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x,p.y); e.preventDefault(); };
+  const move = (e)=>{ if(!drawing) return; const p = pos(e); ctx.lineTo(p.x,p.y); ctx.stroke(); e.preventDefault(); };
+  const end = ()=>{ drawing = false; };
+  canvas.addEventListener("mousedown", start);
+  canvas.addEventListener("mousemove", move);
+  window.addEventListener("mouseup", end);
+  canvas.addEventListener("touchstart", start, {passive:false});
+  canvas.addEventListener("touchmove", move, {passive:false});
+  canvas.addEventListener("touchend", end);
+}
+
+function padIsEmpty(id){
+  const canvas = document.getElementById(id);
+  const ctx = canvas.getContext("2d");
+  const data = ctx.getImageData(0,0,canvas.width,canvas.height).data;
+  for(let i=3;i<data.length;i+=4){ if(data[i]!==0) return false; }
+  return true;
+}
+
+function val(id){
+  const el = document.getElementById(id);
+  return el ? el.value.trim() : "";
+}
+
+setStage("Entrega");
+
+document.getElementById("regForm").addEventListener("submit", async (e)=>{
+  e.preventDefault();
+  const statusEl = document.getElementById("statusMsg");
+  statusEl.className = "status-msg";
+  statusEl.textContent = "";
+
+  if(!configured){
+    statusEl.className = "status-msg err";
+    statusEl.textContent = "Falta configurar SUPABASE_ANON_KEY en el archivo. Revisa el bloque de configuración al inicio del script.";
+    return;
+  }
+  if(!val("fecha") || !val("sala")){
+    statusEl.className = "status-msg err";
+    statusEl.textContent = "Completa al menos Fecha y Sala antes de guardar.";
+    return;
+  }
+
+  const row = {
+    etapa: currentStage,
+    fecha: val("fecha"),
+    sala: val("sala"),
+    resp_icetel: val("respIcetel"),
+    resp_teknica: val("respTeknica"),
+    orden_limpieza: val("ordenLimpieza"),
+    actividades: val("actividades") || val("restitucion") || "",
+    avance: val("avance") ? Number(val("avance").replace("%","")) : null,
+    riesgos: val("riesgos"),
+    confirmacion: val("confirmacion") || val("salaSegura") || val("infra") || "",
+    pendientes: val("pendientes") || val("restricciones") || "",
+    observaciones: val("compromisos") || val("observFinales") || val("condOperacionales") || val("estadoAvance") || val("semana") || "",
+    firma_entrega: padIsEmpty("padA") ? null : document.getElementById("padA").toDataURL("image/png"),
+    firma_recibe: padIsEmpty("padB") ? null : document.getElementById("padB").toDataURL("image/png"),
+  };
+
+  const btn = document.getElementById("submitBtn");
+  btn.disabled = true;
+  btn.textContent = "Guardando…";
+
+  const { error } = await supabase.from(TABLE_NAME).insert(row);
+
+  btn.disabled = false;
+  btn.textContent = "Guardar registro";
+
+  if(error){
+    statusEl.className = "status-msg err";
+    statusEl.textContent = "Error al guardar: " + error.message;
+  } else {
+    statusEl.className = "status-msg ok";
+    statusEl.textContent = "Registro guardado correctamente.";
+    e.target.querySelectorAll("input, textarea").forEach(i=>i.value="");
+    clearSignatures();
+    loadRecords();
+  }
+});
+
+async function checkConnection(){
+  const badge = document.getElementById("connBadge");
+  if(!configured){
+    badge.textContent = "Supabase no configurado";
+    badge.classList.add("err");
+    return;
+  }
+  const { error } = await supabase.from(TABLE_NAME).select("id", { count: "exact", head: true });
+  if(error){
+    badge.textContent = "Sin conexión a Supabase";
+    badge.classList.add("err");
+  } else {
+    badge.textContent = "Conectado a Supabase";
+    badge.classList.add("ok");
+  }
+}
+
+async function loadRecords(){
+  const body = document.getElementById("recBody");
+  const empty = document.getElementById("emptyMsg");
+  const loading = document.getElementById("loadingMsg");
+  if(!configured){
+    loading.style.display = "none";
+    empty.style.display = "block";
+    empty.textContent = "Configura SUPABASE_ANON_KEY para ver los registros.";
+    return;
+  }
+  loading.style.display = "block";
+  empty.style.display = "none";
+  body.innerHTML = "";
+
+  let query = supabase.from(TABLE_NAME).select("*").order("created_at", { ascending:false });
+  const etapa = document.getElementById("filterEtapa").value;
+  const sala = document.getElementById("filterSala").value.trim();
+  if(etapa) query = query.eq("etapa", etapa);
+  if(sala) query = query.ilike("sala", `%${sala}%`);
+
+  const { data, error } = await query;
+  loading.style.display = "none";
+
+  if(error){
+    empty.style.display = "block";
+    empty.textContent = "No se pudieron cargar los registros: " + error.message;
+    return;
+  }
+  if(!data || data.length===0){
+    empty.style.display = "block";
+    empty.textContent = "Aún no hay registros. El primero que guardes aparecerá aquí.";
+    return;
+  }
+
+  data.forEach(r=>{
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><span class="pill ${r.etapa}">${r.etapa}</span></td>
+      <td>${r.fecha||""}</td>
+      <td>${r.sala||""}</td>
+      <td>${r.resp_icetel||""}</td>
+      <td>${r.resp_teknica||""}</td>
+      <td style="max-width:220px;">${(r.actividades||"").slice(0,90)}</td>
+      <td>${r.avance!=null ? r.avance+"%" : ""}</td>
+      <td style="max-width:160px;">${(r.confirmacion||"").slice(0,60)}</td>
+      <td>${r.firma_entrega ? `<img class="sig-thumb" src="${r.firma_entrega}">` : "—"}</td>
+      <td>${r.firma_recibe ? `<img class="sig-thumb" src="${r.firma_recibe}">` : "—"}</td>
+    `;
+    body.appendChild(tr);
+  });
+
+  body.querySelectorAll(".sig-thumb").forEach(img=>{
+    img.addEventListener("click", ()=>{
+      document.getElementById("sigModalImg").src = img.src;
+      document.getElementById("sigModalBg").classList.add("show");
+    });
+  });
+}
+
+document.getElementById("sigModalClose").addEventListener("click", ()=>{
+  document.getElementById("sigModalBg").classList.remove("show");
+});
+document.getElementById("sigModalBg").addEventListener("click", (e)=>{
+  if(e.target.id==="sigModalBg") e.target.classList.remove("show");
+});
+
+document.getElementById("filterEtapa").addEventListener("change", loadRecords);
+document.getElementById("filterSala").addEventListener("input", ()=>{
+  clearTimeout(window._filterT);
+  window._filterT = setTimeout(loadRecords, 350);
+});
+document.getElementById("refreshBtn").addEventListener("click", loadRecords);
+
+checkConnection();
+loadRecords();
+</script>
+</body>
+</html>
