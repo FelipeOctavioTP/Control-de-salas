@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
   :root{
     --bg:#0B1220;
@@ -110,6 +111,20 @@
   .pill.Semanal{background:#3A2E08;color:var(--amber);}
   .pill.Cierre{background:#242C38;color:var(--gray);}
   .sig-thumb{width:70px;height:32px;object-fit:contain;background:#fff;border-radius:2px;cursor:pointer;}
+  input[type=file]{
+    background:var(--panel-2);border:1px solid var(--border);border-radius:4px;color:var(--muted);
+    padding:8px;font-family:"IBM Plex Mono",monospace;font-size:12px;width:100%;
+  }
+  .foto-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;}
+  .foto-thumb{position:relative;width:64px;height:64px;border-radius:4px;overflow:hidden;border:1px solid var(--border);}
+  .foto-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+  .foto-thumb button{position:absolute;top:2px;right:2px;background:rgba(0,0,0,.65);color:#fff;border:none;border-radius:2px;font-size:10px;width:16px;height:16px;line-height:16px;cursor:pointer;padding:0;}
+  .rec-foto-thumb{width:34px;height:34px;object-fit:cover;border-radius:2px;cursor:pointer;margin-right:3px;}
+  button.export-btn{
+    background:none;border:1px solid var(--green);color:var(--green);font-size:11.5px;padding:8px 14px;
+    border-radius:4px;cursor:pointer;font-family:"Chakra Petch",sans-serif;font-weight:600;letter-spacing:.3px;
+  }
+  button.export-btn:hover{background:#0f2318;}
   .empty{color:var(--muted);font-size:12px;padding:18px 4px;}
   .loading{color:var(--muted);font-size:12px;padding:18px 4px;}
 
@@ -118,6 +133,27 @@
   .modal{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:16px;max-width:420px;}
   .modal img{width:100%;background:#fff;border-radius:4px;}
   .modal button{margin-top:10px;}
+
+  @media (max-width:640px){
+    body{padding:14px 10px 50px;}
+    header{flex-direction:column;align-items:flex-start;gap:10px;}
+    .badge-conn{align-self:flex-start;}
+    header h1{font-size:18px;}
+    header .sub, .escal{font-size:11px;}
+    .steps{gap:6px;}
+    .step{min-width:calc(50% - 6px);padding:8px 10px;}
+    .panel{padding:14px 12px;}
+    .grid{grid-template-columns:1fr;gap:10px;}
+    .sig-row{grid-template-columns:1fr;}
+    .actions{flex-direction:column;align-items:stretch;}
+    .actions button.primary{width:100%;}
+    .filters{flex-direction:column;align-items:stretch;}
+    .filters select,.filters input,.filters button{max-width:none;width:100%;}
+    .export-btn{margin-left:0 !important;}
+    table{font-size:11px;}
+    th,td{padding:6px;}
+    .modal{max-width:90vw;}
+  }
 </style>
 </head>
 <body>
@@ -161,13 +197,14 @@
       </select>
       <input type="text" id="filterSala" placeholder="Filtrar por sala">
       <button type="button" class="mini-btn" id="refreshBtn">Actualizar</button>
+      <button type="button" class="export-btn" id="exportBtn" style="margin-left:auto;">Exportar a Excel</button>
     </div>
     <div style="overflow-x:auto;">
       <table id="recTable">
         <thead>
           <tr>
             <th>Etapa</th><th>Fecha</th><th>Sala</th><th>Resp. ICETEL</th><th>Resp. Teknica</th>
-            <th>Detalle</th><th>Avance</th><th>Confirmación</th><th>Firma entrega</th><th>Firma recibe</th>
+            <th>Detalle</th><th>Avance</th><th>Confirmación</th><th>Comentarios</th><th>Fotos</th><th>Firma entrega</th><th>Firma recibe</th>
           </tr>
         </thead>
         <tbody id="recBody"></tbody>
@@ -187,6 +224,30 @@
 </div>
 
 <script>
+window.addEventListener("error", function(e){
+  let banner = document.getElementById("fatalErrorBanner");
+  if(!banner){
+    banner = document.createElement("div");
+    banner.id = "fatalErrorBanner";
+    banner.style.cssText = "background:#3a1010;border:1px solid #F87171;color:#F87171;padding:12px 16px;margin:0 auto 16px;max-width:1100px;border-radius:6px;font-family:monospace;font-size:12.5px;white-space:pre-wrap;";
+    document.body.insertBefore(banner, document.body.firstChild);
+  }
+  banner.textContent = "Error en la página: " + (e.message || e) + (e.filename ? (" (" + e.filename + ":" + e.lineno + ")") : "");
+});
+
+function showFatalError(msg){
+  const banner = document.getElementById("fatalErrorBanner") || (function(){
+    const b = document.createElement("div");
+    b.id = "fatalErrorBanner";
+    b.style.cssText = "background:#3a1010;border:1px solid #F87171;color:#F87171;padding:12px 16px;margin:0 auto 16px;max-width:1100px;border-radius:6px;font-family:monospace;font-size:12.5px;white-space:pre-wrap;";
+    document.body.insertBefore(b, document.body.firstChild);
+    return b;
+  })();
+  banner.textContent = "Error en la página: " + msg;
+}
+
+try {
+
 /* ============ CONFIGURACIÓN SUPABASE ============
    Reemplaza estos dos valores por los de tu proyecto Supabase
    (Project Settings → API). El anon key es público, seguro de
@@ -199,7 +260,15 @@ const TABLE_NAME = "control_salas_dcsm";
 let supabase = null;
 let configured = SUPABASE_ANON_KEY && SUPABASE_ANON_KEY.indexOf("PEGA_AQUI") === -1;
 if (configured) {
-  supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  try {
+    if (typeof window.supabase === "undefined") {
+      throw new Error("La librería de Supabase no cargó (revisa tu conexión a internet o un bloqueador de anuncios/extensión).");
+    }
+    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  } catch (err) {
+    configured = false;
+    console.error("No se pudo inicializar Supabase:", err);
+  }
 }
 
 const STAGES = [
@@ -245,7 +314,61 @@ commonFields.innerHTML = `
   ${fieldHTML("sala","Sala","text","Ej: UPS 1, TGA-03, TCU 2")}
   ${fieldHTML("respIcetel","Responsable ICETEL","text")}
   ${fieldHTML("respTeknica","Responsable Teknica","text")}
+  <div class="field full">
+    <label for="fotoInput">Fotos / evidencia</label>
+    <input type="file" id="fotoInput" accept="image/*" capture="environment" multiple>
+    <div class="hint">Puedes tomar fotos con la cámara del celular o elegir varias desde la galería.</div>
+    <div class="foto-grid" id="fotoGrid"></div>
+  </div>
+  ${fieldHTML("comentarios","Comentarios","textarea","Notas libres adicionales para este registro",true)}
 `;
+
+function setTodayDate(){
+  const f = document.getElementById("fecha");
+  if(f) f.value = new Date().toISOString().slice(0,10);
+}
+setTodayDate();
+
+let selectedFiles = [];
+
+function renderFotoGrid(){
+  const grid = document.getElementById("fotoGrid");
+  grid.innerHTML = "";
+  selectedFiles.forEach((f,i)=>{
+    const url = URL.createObjectURL(f);
+    const div = document.createElement("div");
+    div.className = "foto-thumb";
+    div.innerHTML = `<img src="${url}"><button type="button" data-i="${i}" title="Quitar">×</button>`;
+    grid.appendChild(div);
+  });
+  grid.querySelectorAll("button").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      selectedFiles.splice(Number(btn.dataset.i),1);
+      renderFotoGrid();
+    });
+  });
+}
+
+document.getElementById("fotoInput").addEventListener("change",(e)=>{
+  selectedFiles = selectedFiles.concat(Array.from(e.target.files));
+  e.target.value = "";
+  renderFotoGrid();
+});
+
+function slug(s){
+  return (s||"x").toString().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-zA-Z0-9]+/g,"-").toLowerCase();
+}
+
+async function uploadToStorage(fileOrBlob, path, contentType){
+  const { error } = await supabase.storage.from("evidencias-dcsm").upload(path, fileOrBlob, { contentType, upsert:false });
+  if(error) throw error;
+  const { data } = supabase.storage.from("evidencias-dcsm").getPublicUrl(path);
+  return data.publicUrl;
+}
+
+function canvasToBlob(canvas){
+  return new Promise(resolve=>canvas.toBlob(resolve,"image/png"));
+}
 
 function renderStageFields(){
   const c = document.getElementById("stageFields");
@@ -319,6 +442,12 @@ function clearSignatures(){
   });
 }
 
+function clearFotos(){
+  selectedFiles = [];
+  const grid = document.getElementById("fotoGrid");
+  if(grid) grid.innerHTML = "";
+}
+
 function setupPad(id){
   const canvas = document.getElementById(id);
   const ratio = window.devicePixelRatio || 1;
@@ -383,48 +512,77 @@ document.getElementById("regForm").addEventListener("submit", async (e)=>{
     return;
   }
 
-  const row = {
-    etapa: currentStage,
-    fecha: val("fecha"),
-    sala: val("sala"),
-    resp_icetel: val("respIcetel"),
-    resp_teknica: val("respTeknica"),
-    orden_limpieza: val("ordenLimpieza"),
-    actividades: val("actividades") || val("restitucion") || "",
-    avance: val("avance") ? Number(val("avance").replace("%","")) : null,
-    riesgos: val("riesgos"),
-    confirmacion: val("confirmacion") || val("salaSegura") || val("infra") || "",
-    pendientes: val("pendientes") || val("restricciones") || "",
-    observaciones: val("compromisos") || val("observFinales") || val("condOperacionales") || val("estadoAvance") || val("semana") || "",
-    firma_entrega: padIsEmpty("padA") ? null : document.getElementById("padA").toDataURL("image/png"),
-    firma_recibe: padIsEmpty("padB") ? null : document.getElementById("padB").toDataURL("image/png"),
-  };
-
   const btn = document.getElementById("submitBtn");
   btn.disabled = true;
-  btn.textContent = "Guardando…";
 
-  const { error } = await supabase.from(TABLE_NAME).insert(row);
+  try {
+    const stamp = Date.now();
+    const salaSlug = slug(val("sala"));
 
-  btn.disabled = false;
-  btn.textContent = "Guardar registro";
+    btn.textContent = "Subiendo fotos…";
+    const fotoUrls = [];
+    for (let i=0;i<selectedFiles.length;i++){
+      const f = selectedFiles[i];
+      const ext = (f.name.split(".").pop() || "jpg").toLowerCase();
+      const path = `${currentStage}/${salaSlug}_${stamp}_${i}.${ext}`;
+      const url = await uploadToStorage(f, path, f.type || "image/jpeg");
+      fotoUrls.push(url);
+    }
 
-  if(error){
-    statusEl.className = "status-msg err";
-    statusEl.textContent = "Error al guardar: " + error.message;
-  } else {
+    btn.textContent = "Subiendo firmas…";
+    let firmaEntregaUrl = null, firmaRecibeUrl = null;
+    if(!padIsEmpty("padA")){
+      const blobA = await canvasToBlob(document.getElementById("padA"));
+      firmaEntregaUrl = await uploadToStorage(blobA, `firmas/${currentStage}_${salaSlug}_${stamp}_A.png`, "image/png");
+    }
+    if(!padIsEmpty("padB")){
+      const blobB = await canvasToBlob(document.getElementById("padB"));
+      firmaRecibeUrl = await uploadToStorage(blobB, `firmas/${currentStage}_${salaSlug}_${stamp}_B.png`, "image/png");
+    }
+
+    const row = {
+      etapa: currentStage,
+      fecha: val("fecha"),
+      sala: val("sala"),
+      resp_icetel: val("respIcetel"),
+      resp_teknica: val("respTeknica"),
+      orden_limpieza: val("ordenLimpieza"),
+      actividades: val("actividades") || val("restitucion") || "",
+      avance: val("avance") ? Number(val("avance").replace("%","")) : null,
+      riesgos: val("riesgos"),
+      confirmacion: val("confirmacion") || val("salaSegura") || val("infra") || "",
+      pendientes: val("pendientes") || val("restricciones") || "",
+      observaciones: val("compromisos") || val("observFinales") || val("condOperacionales") || val("estadoAvance") || val("semana") || "",
+      comentarios: val("comentarios"),
+      fotos: fotoUrls,
+      firma_entrega: firmaEntregaUrl,
+      firma_recibe: firmaRecibeUrl,
+    };
+
+    btn.textContent = "Guardando…";
+    const { error } = await supabase.from(TABLE_NAME).insert(row);
+    if(error) throw error;
+
     statusEl.className = "status-msg ok";
     statusEl.textContent = "Registro guardado correctamente.";
     e.target.querySelectorAll("input, textarea").forEach(i=>i.value="");
+    setTodayDate();
     clearSignatures();
+    clearFotos();
     loadRecords();
+  } catch(err){
+    statusEl.className = "status-msg err";
+    statusEl.textContent = "Error al guardar: " + err.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Guardar registro";
   }
 });
 
 async function checkConnection(){
   const badge = document.getElementById("connBadge");
   if(!configured){
-    badge.textContent = "Supabase no configurado";
+    badge.textContent = "Sin conexión a Supabase (revisa consola F12)";
     badge.classList.add("err");
     return;
   }
@@ -437,6 +595,8 @@ async function checkConnection(){
     badge.classList.add("ok");
   }
 }
+
+let lastRecords = [];
 
 async function loadRecords(){
   const body = document.getElementById("recBody");
@@ -467,12 +627,19 @@ async function loadRecords(){
     return;
   }
   if(!data || data.length===0){
+    lastRecords = [];
     empty.style.display = "block";
     empty.textContent = "Aún no hay registros. El primero que guardes aparecerá aquí.";
     return;
   }
 
+  lastRecords = data;
+
   data.forEach(r=>{
+    const fotos = Array.isArray(r.fotos) ? r.fotos : [];
+    const fotosHtml = fotos.length
+      ? fotos.slice(0,3).map(u=>`<img class="rec-foto-thumb" src="${u}">`).join("") + (fotos.length>3 ? `<span class="hint">+${fotos.length-3}</span>` : "")
+      : "—";
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td><span class="pill ${r.etapa}">${r.etapa}</span></td>
@@ -483,18 +650,52 @@ async function loadRecords(){
       <td style="max-width:220px;">${(r.actividades||"").slice(0,90)}</td>
       <td>${r.avance!=null ? r.avance+"%" : ""}</td>
       <td style="max-width:160px;">${(r.confirmacion||"").slice(0,60)}</td>
+      <td style="max-width:160px;">${(r.comentarios||"").slice(0,60)}</td>
+      <td style="white-space:nowrap;">${fotosHtml}</td>
       <td>${r.firma_entrega ? `<img class="sig-thumb" src="${r.firma_entrega}">` : "—"}</td>
       <td>${r.firma_recibe ? `<img class="sig-thumb" src="${r.firma_recibe}">` : "—"}</td>
     `;
     body.appendChild(tr);
   });
 
-  body.querySelectorAll(".sig-thumb").forEach(img=>{
+  body.querySelectorAll(".sig-thumb, .rec-foto-thumb").forEach(img=>{
     img.addEventListener("click", ()=>{
       document.getElementById("sigModalImg").src = img.src;
       document.getElementById("sigModalBg").classList.add("show");
     });
   });
+}
+
+function exportToExcel(){
+  if(!lastRecords.length){
+    alert("No hay registros para exportar con los filtros actuales.");
+    return;
+  }
+  const rows = lastRecords.map(r=>({
+    "Etapa": r.etapa || "",
+    "Fecha": r.fecha || "",
+    "Sala": r.sala || "",
+    "Responsable ICETEL": r.resp_icetel || "",
+    "Responsable Teknica": r.resp_teknica || "",
+    "Orden y limpieza": r.orden_limpieza || "",
+    "Detalle / actividades": r.actividades || "",
+    "% Avance": r.avance != null ? r.avance : "",
+    "Riesgos / hallazgos": r.riesgos || "",
+    "Confirmacion": r.confirmacion || "",
+    "Pendientes / restricciones": r.pendientes || "",
+    "Observaciones": r.observaciones || "",
+    "Comentarios": r.comentarios || "",
+    "Fotos (links)": (Array.isArray(r.fotos) ? r.fotos : []).join(" | "),
+    "Firma entrega (link)": r.firma_entrega || "",
+    "Firma recibe (link)": r.firma_recibe || "",
+    "Creado": r.created_at || "",
+  }));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws["!cols"] = Object.keys(rows[0]).map(k => ({ wch: Math.min(Math.max(k.length, 14), 40) }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Control Salas DCSM");
+  const stamp = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, `Control_Salas_DCSM_${stamp}.xlsx`);
 }
 
 document.getElementById("sigModalClose").addEventListener("click", ()=>{
@@ -510,9 +711,15 @@ document.getElementById("filterSala").addEventListener("input", ()=>{
   window._filterT = setTimeout(loadRecords, 350);
 });
 document.getElementById("refreshBtn").addEventListener("click", loadRecords);
+document.getElementById("exportBtn").addEventListener("click", exportToExcel);
 
 checkConnection();
 loadRecords();
+
+} catch(err){
+  showFatalError(err.message);
+  console.error(err);
+}
 </script>
 </body>
 </html>
